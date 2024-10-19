@@ -14,10 +14,10 @@ const HASH_RANDOM_MASK: u32 = 1_463_735_687;
 const HASH_RANDOM_MASK2: u32 = 1_653_893_711;
 
 pub const FIL_PAGE_SIZE: usize = 16384;
-const FIL_TRAILER_SIZE: usize = 8;
+pub const FIL_TRAILER_SIZE: usize = 8;
 
 const FIL_HEADER_OFFSET: usize = 0;
-const FIL_HEADER_SIZE: usize = 38;
+pub const FIL_HEADER_SIZE: usize = 38;
 
 /// Skips CHECKSUM field (4 bytes)
 const FIL_HEADER_PARTIAL_OFFSET: usize = 4;
@@ -61,11 +61,11 @@ impl<'a> Debug for Page<'a> {
 
 impl<'a> Page<'a> {
     pub fn from_bytes(buf: &'a [u8]) -> Result<Page<'a>> {
-        if buf.len() != 16384 {
+        if buf.len() != FIL_PAGE_SIZE {
             return Err(Error::msg("Page is 16kB"));
         }
 
-        let header = FILHeader::from_bytes(&buf[0..38])?;
+        let header = FILHeader::from_bytes(&buf[0..FIL_HEADER_SIZE])?;
 
         Ok(Page {
             // space_id: header.space_id,
@@ -184,7 +184,7 @@ pub struct FILHeader {
 
 impl FILHeader {
     pub fn from_bytes(buffer: &[u8]) -> Result<FILHeader> {
-        if buffer.len() < 38 {
+        if buffer.len() < FIL_HEADER_SIZE {
             return Err(Error::msg("Slice is not long enough"));
         }
 
