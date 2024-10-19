@@ -1,6 +1,6 @@
 use crate::innodb::charset::InnoDBCharset;
 use chrono::DateTime;
-use tracing::{info, trace};
+use tracing::trace;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldType {
