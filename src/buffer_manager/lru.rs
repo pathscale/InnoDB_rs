@@ -1,8 +1,6 @@
 use super::BufferManager;
-use crate::innodb::{
-    page::{Page, PAGE_SIZE},
-    InnoDBError,
-};
+use crate::page::{Page, PAGE_SIZE};
+use crate::InnoDBError;
 use anyhow::{anyhow, Result};
 use std::{
     cell::RefCell,
@@ -125,11 +123,11 @@ impl BufferManager for LRUBufferManager {
 
         // Validate page *FIRST*
         let page = Page::from_bytes(&self.backing_store[free_frame]);
-        if page.header().offset == 0 {
+        if page.header().page_id.0 == 0 {
             return Err(anyhow!(InnoDBError::PageNotFound));
         }
 
-        assert_eq!(page.header().offset, offset);
+        assert_eq!(page.header().page_id.0, offset);
 
         // Can't fail from this point on, so we update internal state
 
@@ -141,9 +139,9 @@ impl BufferManager for LRUBufferManager {
     }
 
     fn unpin(&self, page: &Page) {
-        let offset = page.header().offset;
+        let offset = page.header().page_id;
         trace!("Unpinning {}", offset);
-        if let Some(frame_number) = self.page_pin_map.borrow().get(&offset) {
+        if let Some(frame_number) = self.page_pin_map.borrow().get(&offset.0) {
             self.page_pin_counter.borrow_mut()[*frame_number] -= 1;
         } else {
             panic!("Unpinning a non-pinned page");

@@ -2,6 +2,7 @@ pub mod blob_header;
 pub mod field;
 pub mod row;
 
+use crate::charset::InnoDBCharset;
 use anyhow::{anyhow, Result};
 use field::{Field, FieldType};
 use sqlparser::{
@@ -10,8 +11,6 @@ use sqlparser::{
     parser::Parser,
 };
 use tracing::{debug, info};
-
-use crate::innodb::charset::InnoDBCharset;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct TableDefinition {
@@ -235,11 +234,11 @@ impl TableDefinition {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::read_to_string, path::PathBuf};
-
-    use crate::innodb::{charset::InnoDBCharset, table::field::FieldType};
-
     use super::{field::Field, TableDefinition};
+    use crate::charset::InnoDBCharset;
+    use crate::innodb::{charset::InnoDBCharset, table::field::FieldType};
+    use crate::table::field::FieldType;
+    use std::{fs::read_to_string, path::PathBuf};
 
     #[test]
     fn parse_sql_to_table_def_1() {

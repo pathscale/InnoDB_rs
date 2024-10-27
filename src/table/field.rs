@@ -1,4 +1,4 @@
-use crate::innodb::charset::InnoDBCharset;
+use crate::charset::InnoDBCharset;
 use chrono::DateTime;
 use tracing::trace;
 

@@ -9,9 +9,8 @@ use std::{
 };
 use tracing::trace;
 
-use crate::innodb::page::{Page, PAGE_SIZE};
-
 use super::BufferManager;
+use crate::page::{Page, PAGE_SIZE};
 
 pub struct SimpleBufferManager {
     page_directory: PathBuf,
@@ -55,6 +54,6 @@ impl BufferManager for SimpleBufferManager {
     }
 
     fn unpin(&self, page: &Page) {
-        trace!("Closed ({})", page.header().offset);
+        trace!("Closed ({})", page.header().page_id);
     }
 }

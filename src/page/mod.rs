@@ -1,9 +1,45 @@
+use derive_more::{Display, From};
 use num_enum::TryFromPrimitive;
+use rkyv::{Archive, Deserialize, Serialize};
 use std::mem::transmute;
 
-pub const PAGE_SIZE: usize = 16 * 1024;
+pub const PAGE_SIZE: usize = 4 * 1024;
 pub mod data;
 pub mod index;
+
+/// Represents page's identifier. Is unique within the table bounds
+#[derive(
+    Archive,
+    Copy,
+    Clone,
+    Deserialize,
+    Debug,
+    Display,
+    Eq,
+    From,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+)]
+pub struct PageId(pub u32);
+
+impl From<PageId> for usize {
+    fn from(value: PageId) -> Self {
+        value.0 as usize
+    }
+}
+impl From<usize> for PageId {
+    fn from(value: usize) -> Self {
+        Self(value as u32)
+    }
+}
+impl From<i32> for PageId {
+    fn from(value: i32) -> Self {
+        Self(value as u32)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u16)]
@@ -81,10 +117,9 @@ impl Default for PageType {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PageHeader {
-    pub new_checksum: u32,
-    pub offset: u32, // offset (page number)
+    pub page_id: PageId,
     pub prev: u32,
     pub next: u32,
     pub lsn: u64,
