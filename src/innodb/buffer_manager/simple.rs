@@ -9,13 +9,13 @@ use std::{
 };
 use tracing::trace;
 
-use crate::innodb::page::{Page, FIL_PAGE_SIZE};
+use crate::innodb::page::{Page, PAGE_SIZE};
 
-use super::{BufferManager, PageGuard};
+use super::BufferManager;
 
 pub struct SimpleBufferManager {
     page_directory: PathBuf,
-    page_cache: RefCell<HashMap<(u32, u32), Box<[u8]>>>,
+    page_cache: RefCell<HashMap<u32, Box<[u8]>>>,
 }
 
 impl SimpleBufferManager {
@@ -29,41 +29,32 @@ impl SimpleBufferManager {
         }
     }
 
-    fn get_page(&self, space_id: u32, offset: u32) -> Result<&[u8]> {
-        if let Some(buf) = self.page_cache.borrow().get(&(space_id, offset)) {
-            assert_eq!(buf.len(), FIL_PAGE_SIZE);
+    fn get_page(&self, offset: u32) -> Result<&[u8]> {
+        if let Some(buf) = self.page_cache.borrow().get(&offset) {
+            assert_eq!(buf.len(), PAGE_SIZE);
             let ptr = buf.as_ptr();
-            return Ok(unsafe { slice::from_raw_parts(ptr, FIL_PAGE_SIZE) });
+            return Ok(unsafe { slice::from_raw_parts(ptr, PAGE_SIZE) });
         }
 
-        let path_path = self.page_directory.join(format!("{:08}.pages", space_id));
+        let path_path = self.page_directory.join(format!("{}.pages", 0));
         let mut buf_reader = BufReader::new(File::open(&path_path)?);
-        buf_reader.seek(SeekFrom::Start(offset as u64 * FIL_PAGE_SIZE as u64))?;
-        let mut buf = Box::new([0u8; FIL_PAGE_SIZE]);
+        buf_reader.seek(SeekFrom::Start(offset as u64 * PAGE_SIZE as u64))?;
+        let mut buf = Box::new([0u8; PAGE_SIZE]);
         buf_reader.read_exact(buf.as_mut())?;
-        self.page_cache.borrow_mut().insert((space_id, offset), buf);
-        let ptr = self
-            .page_cache
-            .borrow()
-            .get(&(space_id, offset))
-            .expect("???")
-            .as_ptr();
-        return Ok(unsafe { slice::from_raw_parts(ptr, FIL_PAGE_SIZE) });
+        self.page_cache.borrow_mut().insert(offset, buf);
+        let ptr = self.page_cache.borrow().get(&offset).unwrap().as_ptr();
+        Ok(unsafe { slice::from_raw_parts(ptr, PAGE_SIZE) })
     }
 }
 
 impl BufferManager for SimpleBufferManager {
-    fn pin(&self, space_id: u32, offset: u32) -> Result<PageGuard> {
-        let buf = self.get_page(space_id, offset)?;
-        trace!("Opened ({}, {})", space_id, offset);
-        Ok(PageGuard::new(Page::from_bytes(buf)?, self))
+    fn pin(&self, offset: u32) -> Result<&Page> {
+        let buf = self.get_page(offset)?;
+        trace!("Opened ({})", offset);
+        Ok(Page::from_bytes(buf))
     }
 
-    fn unpin(&self, page: Page) {
-        trace!(
-            "Closed ({:?}, {})",
-            page.header.space_id,
-            page.header.offset
-        );
+    fn unpin(&self, page: &Page) {
+        trace!("Closed ({})", page.header().offset);
     }
 }

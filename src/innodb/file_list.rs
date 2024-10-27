@@ -61,10 +61,6 @@ impl FileListBaseNode {
             last_node,
         })
     }
-
-    pub(crate) fn size() -> usize {
-        4 + FileAddress::size() + FileAddress::size()
-    }
 }
 
 #[derive(Debug, Clone)]

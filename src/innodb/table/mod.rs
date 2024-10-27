@@ -91,7 +91,7 @@ impl TableDefinition {
                     DataType::Date => FieldType::Date,
                     DataType::Datetime(_) => FieldType::DateTime,
                     DataType::Timestamp(_, _) => FieldType::Timestamp,
-                    DataType::Float(opt) => FieldType::Float,
+                    DataType::Float(_) => FieldType::Float,
                     DataType::Double => FieldType::Double,
                     DataType::Custom(name, _) => match name.0[0].value.as_str() {
                         "mediumtext" => FieldType::Text((1 << 24) - 1, charset),

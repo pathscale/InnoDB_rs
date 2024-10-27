@@ -1,3 +1,9 @@
+use super::BufferManager;
+use crate::innodb::{
+    page::{Page, PAGE_SIZE},
+    InnoDBError,
+};
+use anyhow::{anyhow, Result};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -7,22 +13,15 @@ use std::{
     slice,
     time::SystemTime,
 };
-
-use super::{BufferManager, PageGuard};
-use crate::innodb::{
-    page::{Page, FIL_PAGE_SIZE},
-    InnoDBError,
-};
-use anyhow::{anyhow, Result};
 use tracing::trace;
 
 const LRU_PAGE_COUNT: usize = 16;
 
 pub struct LRUBufferManager {
-    backing_store: Vec<[u8; FIL_PAGE_SIZE]>,
+    backing_store: Vec<[u8; PAGE_SIZE]>,
     page_pin_counter: RefCell<Vec<u32>>,
     page_directory: PathBuf,
-    page_pin_map: RefCell<HashMap<(u32, u32), usize>>,
+    page_pin_map: RefCell<HashMap<u32, usize>>,
     lru_list: RefCell<Vec<u64>>,
 }
 
@@ -40,7 +39,7 @@ impl LRUBufferManager {
         };
         buffer_manager
             .backing_store
-            .resize(LRU_PAGE_COUNT, [0u8; FIL_PAGE_SIZE]);
+            .resize(LRU_PAGE_COUNT, [0u8; PAGE_SIZE]);
         buffer_manager
             .page_pin_counter
             .borrow_mut()
@@ -68,14 +67,18 @@ impl LRUBufferManager {
         }
         if min_timestamp != u64::MAX {
             let mut borrowed_pin_map = self.page_pin_map.borrow_mut();
-            let ((space_id, offset), _) = borrowed_pin_map
+            let (offset, _) = borrowed_pin_map
                 .iter()
                 .find(|(_, val)| **val == result_frame)
-                .unwrap_or_else(|| panic!("can't find the frame({result_frame}), {:#?}, pinmap: {:#?}",
-                    self, borrowed_pin_map))
-                .to_owned();
-            let (space_id, offset) = (*space_id, *offset);
-            borrowed_pin_map.remove(&(space_id, offset));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "can't find the frame({result_frame}), {:#?}, pinmap: {:#?}",
+                        self, borrowed_pin_map
+                    )
+                });
+            let offset = *offset;
+
+            borrowed_pin_map.remove(&offset);
             self.lru_list.borrow_mut()[result_frame] = 0;
             result_frame
         } else {
@@ -96,56 +99,51 @@ impl std::fmt::Debug for LRUBufferManager {
 }
 
 impl BufferManager for LRUBufferManager {
-    fn pin(&self, space_id: u32, offset: u32) -> Result<PageGuard> {
-        trace!("Pinning {}, {}", space_id, offset);
+    fn pin(&self, offset: u32) -> Result<&Page> {
+        trace!("Pinning {}", offset);
         let cur_sys_time = SystemTime::now();
         let current_time = cur_sys_time
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .duration_since(SystemTime::UNIX_EPOCH)?
             .as_nanos() as u64;
 
         // If we have the page already pinned
-        if let Some(frame_number) = self.page_pin_map.borrow().get(&(space_id, offset)) {
+        if let Some(frame_number) = self.page_pin_map.borrow().get(&(offset)) {
             self.page_pin_counter.borrow_mut()[*frame_number] += 1;
             self.lru_list.borrow_mut()[*frame_number] = current_time;
-            let page = Page::from_bytes(&self.backing_store[*frame_number])?;
-            return Ok(PageGuard::new(page, self));
+            let page = Page::from_bytes(&self.backing_store[*frame_number]);
+            return Ok(page);
         }
 
         // If we don't have page already pinned
-        let mut file = File::open(self.page_directory.join(format!("{:08}.pages", space_id)))?;
-        file.seek(SeekFrom::Start(offset as u64 * FIL_PAGE_SIZE as u64))?;
+        let mut file = File::open(self.page_directory.join("0.pages".to_string()))?;
+        file.seek(SeekFrom::Start(offset as u64 * PAGE_SIZE as u64))?;
         let free_frame = self.find_free();
         file.read_exact(unsafe {
             let selected_frame = &self.backing_store[free_frame];
-            slice::from_raw_parts_mut(selected_frame.as_ptr() as *mut u8, FIL_PAGE_SIZE)
+            slice::from_raw_parts_mut(selected_frame.as_ptr() as *mut u8, PAGE_SIZE)
         })?;
 
         // Validate page *FIRST*
-        let page = Page::from_bytes(&self.backing_store[free_frame])?;
-        if page.header.space_id == 0 && page.header.offset == 0 {
+        let page = Page::from_bytes(&self.backing_store[free_frame]);
+        if page.header().offset == 0 {
             return Err(anyhow!(InnoDBError::PageNotFound));
         }
-        assert_eq!(page.header.space_id, space_id);
-        assert_eq!(page.header.offset, offset);
-        assert_eq!(page.header.new_checksum, page.crc32_checksum());
+
+        assert_eq!(page.header().offset, offset);
 
         // Can't fail from this point on, so we update internal state
 
         self.lru_list.borrow_mut()[free_frame] = current_time;
         self.page_pin_counter.borrow_mut()[free_frame] += 1;
-        self.page_pin_map
-            .borrow_mut()
-            .insert((space_id, offset), free_frame);
+        self.page_pin_map.borrow_mut().insert(offset, free_frame);
 
-        return Ok(PageGuard::new(page, self));
+        Ok(page)
     }
 
-    fn unpin(&self, page: Page) {
-        let space_id = page.header.space_id;
-        let offset = page.header.offset;
-        trace!("Unpinning {}, {}", space_id, offset);
-        if let Some(frame_number) = self.page_pin_map.borrow().get(&(space_id, offset)) {
+    fn unpin(&self, page: &Page) {
+        let offset = page.header().offset;
+        trace!("Unpinning {}", offset);
+        if let Some(frame_number) = self.page_pin_map.borrow().get(&offset) {
             self.page_pin_counter.borrow_mut()[*frame_number] -= 1;
         } else {
             panic!("Unpinning a non-pinned page");
