@@ -4,6 +4,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use std::mem::transmute;
 
 pub const PAGE_SIZE: usize = 4 * 1024;
+pub const PAGE_HEADER_SIZE: usize = size_of::<PageHeader>();
 pub mod data;
 pub mod index;
 
@@ -118,6 +119,7 @@ impl Default for PageType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[repr(align(8))]
 pub struct PageHeader {
     pub page_id: PageId,
     pub prev: u32,
@@ -127,6 +129,7 @@ pub struct PageHeader {
 }
 
 #[derive(PartialEq)]
+#[repr(align(8))]
 pub struct Page {
     pub raw_data: [u8; PAGE_SIZE],
 }
